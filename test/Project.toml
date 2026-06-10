@@ -1,0 +1,9 @@
+[deps]
+DimensionalData = "0703355e-b756-11e9-17c0-8b28908087d0"
+Extents = "411431e0-e8b7-467b-b5e0-f676ba4f2910"
+GeoInterface = "cf35fbd7-0cd7-5166-be24-54bfbe79505f"
+GeometryOps = "3251bfac-6a57-4b6d-aa61-ac1fef2975ab"
+NaturalEarth = "436b0209-26ab-4e65-94a9-6526d86fea76"
+Rasters = "a3a2b9e3-a471-40c9-b274-f788e487c689"
+SortTileRecursiveTree = "746ee33f-1797-42c2-866d-db2fce69d14d"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
