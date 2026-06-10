@@ -2,10 +2,23 @@ import DimensionalData as DD
 import GeometryOps as GO, GeometryOpsCore as GOCore
 import GeoInterface as GI
 import Rasters as RA
+import Extents
 import Missings
 import SortTileRecursiveTree
 
-using Rasters: isnokw, nokw, Lookups, val, Dimensions, dims, checkaxis
+using Rasters: isnokw, nokw, Lookups, val, Dimensions, dims
+
+"""
+    Geometry(lookup::GeometryLookup)
+    Geometry(sel)
+
+A dimension for geometry lookups in vector data cubes.
+
+Construct a `DimArray` with a [`GeometryLookup`](@ref) like
+`DimArray(data, Geometry(GeometryLookup(geometries)))`, and
+index into it with selectors like `Geometry(Contains(point))`.
+"""
+DD.@dim Geometry "Geometry"
 
 """
     GeometryLookup(data, dims = (X(), Y()); geometrycolumn = nothing)
@@ -39,7 +52,7 @@ polygon_lookup = GeometryLookup(polygons, (X(), Y()))
 dv = rand(Geometry(polygon_lookup))
 
 # select the polygon with the centroid of the 88th polygon
-dv[Geometry(Contains(GO.centroid(polygons[88])))] == dv[Geometry(88)] # true
+only(dv[Geometry(Contains(GO.centroid(polygons[88])))]) == dv[88] # true
 ```
 """
 struct GeometryLookup{T,A<:AbstractVector{T},D,M<:GO.Manifold,Tree,CRS} <: DD.Dimensions.Lookup{T, 1}
@@ -79,7 +92,7 @@ function GeometryLookup(data, dims=(DD.X(), DD.Y()); geometrycolumn=nothing, crs
     tree = if isnokw(tree)
         SortTileRecursiveTree.STRtree(geometries)
     elseif GO.SpatialTreeInterface.isspatialtree(tree)
-        if tree isa DataType
+        if tree isa Type
             tree(geometries)
         else
             tree
@@ -99,7 +112,7 @@ function GeometryLookup(data, dims=(DD.X(), DD.Y()); geometrycolumn=nothing, crs
 end
 
 GI.crs(l::GeometryLookup) = l.crs
-RA.setcrs(l::GeometryLookup, crs) = rebuild(l; crs)
+RA.setcrs(l::GeometryLookup, crs) = DD.rebuild(l; crs)
 
 #=
 
@@ -134,7 +147,7 @@ function DD.rebuild(
             SortTileRecursiveTree.STRtree(data)
         end
     elseif GO.SpatialTreeInterface.isspatialtree(tree)
-        if tree isa DataType
+        if tree isa Type
             tree(data)
         else
             tree
@@ -200,15 +213,16 @@ function Lookups.selectindices(lookup::GeometryLookup, sel::DD.Lookups.Contains)
     end
 end
 function Lookups.selectindices(lookup::GeometryLookup, sel::DD.Lookups.At)
+    geom = val(sel)
     @assert GI.isgeometry(geom)
-    candidates = _maybe_get_candidates(lookup, GI.extent(val(sel)))
-    x = findfirst(candiates) do candidate
-        GO.equal(val(at), candidate)
+    candidates = _maybe_get_candidates(lookup, GI.extent(geom))
+    x = findfirst(candidates) do candidate
+        GO.equals(geom, lookup.data[candidate])
     end
     if isnothing(x)
         throw(ArgumentError("$sel not found in lookup"))
     else
-        return x
+        return candidates[x]
     end
 end
 function Lookups.selectindices(lookup::GeometryLookup, sel::DD.Lookups.Near)
@@ -260,32 +274,37 @@ function Lookups.selectindices(
     (x, y)::Tuple{Union{<:DD.Lookups.At,<:DD.Lookups.Contains}, Union{<:DD.Lookups.At,<:DD.Lookups.Contains}}
 )
     xval, yval = val(x), val(y)
-    # TODO: this should be
-    # lookup_ext = Lookups.bounds(lookup)
-    # but that relies on https://github.com/rafaqz/DimensionalData.jl/pull/991/
-    # so for now we need GI.extent(lookup.tree)
-    lookup_ext = GI.extent(lookup.tree)
+    # `At` requires an exact match, so a point matching no geometry is an error;
+    # `Contains` just returns the (possibly empty) set of matches.
+    is_at = x isa DD.Lookups.At && y isa DD.Lookups.At
+    potential_candidates = if isnothing(lookup.tree)
+        collect(eachindex(lookup.data))
+    else
+        # TODO: this should be
+        # lookup_ext = Lookups.bounds(lookup)
+        # but that relies on https://github.com/rafaqz/DimensionalData.jl/pull/991/
+        # so for now we need GI.extent(lookup.tree)
+        lookup_ext = GI.extent(lookup.tree)
 
-    # This is a specialized implementation to save on lookups
-    if !(lookup_ext.X[1] <= xval <= lookup_ext.X[2] && lookup_ext.Y[1] <= yval <= lookup_ext.Y[2])
-        return Int[]
-    else # within extent
-        potential_candidates = GO.SpatialTreeInterface.query(lookup.tree, (xval, yval))
-        isempty(potential_candidates) && return Int[]
-        # If both selectors are At(), return a single index (first match) for speed and clarity
-        if x isa DD.Lookups.At && y isa DD.Lookups.At
-            for candidate in potential_candidates
-                if GO.contains(lookup.data[candidate], (xval, yval))
-                    return candidate
-                end
-            end
-            # No match found within bounds
-            throw(ArgumentError("Point ($xval, $yval) not found in lookup"))
+        # This is a specialized implementation to save on lookups
+        if lookup_ext.X[1] <= xval <= lookup_ext.X[2] && lookup_ext.Y[1] <= yval <= lookup_ext.Y[2]
+            GO.SpatialTreeInterface.query(lookup.tree, (xval, yval))
         else
-            # For Contains selectors, return all matching indices
-            filter(potential_candidates) do candidate
-                GO.contains(lookup.data[candidate], (xval, yval))
+            Int[]
+        end
+    end
+    if is_at
+        # If both selectors are At(), return a single index (first match) for speed and clarity
+        for candidate in potential_candidates
+            if GO.contains(lookup.data[candidate], (xval, yval))
+                return candidate
             end
+        end
+        throw(ArgumentError("Point ($xval, $yval) not found in lookup"))
+    else
+        # For Contains selectors, return all matching indices
+        filter(potential_candidates) do candidate
+            GO.contains(lookup.data[candidate], (xval, yval))
         end
     end
 end
@@ -315,7 +334,7 @@ function Lookups.selectindices(lookup::GeometryLookup, sel::DD.Lookups.Where{Bas
     return setdiff(1:length(lookup.data), actual_intersections)
 end
 
-@inline Lookups.reducelookup(l::GeometryLookup) = NoLookup(OneTo(1))
+@inline Lookups.reducelookup(l::GeometryLookup) = Lookups.NoLookup(Base.OneTo(1))
 
 function Lookups.show_properties(io::IO, mime, lookup::GeometryLookup)
     print(io, " ")
@@ -325,7 +344,7 @@ end
 # Dimension methods
 
 @inline _reducedims(lookup::GeometryLookup, dim::DD.Dimension) =
-    rebuild(dim, [map(x -> zero(x), dim.val[1])])
+    DD.rebuild(dim, [map(x -> zero(x), dim.val[1])])
 
 function DD.format(dim::DD.Dimension{<:GeometryLookup}, axis::AbstractRange)
     # checkaxis(dim, axis)
