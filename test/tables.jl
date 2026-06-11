@@ -78,7 +78,21 @@ square(x, y; s=1.0) =
         @test DataAPI.metadata(tbl, "missingkey", :fallback) == :fallback
         v, style = DataAPI.metadata(tbl, "crs"; style=true)
         @test v == EPSG(4326)
-        @test style == :default
+        # :note style so DataFrames propagates the crs through transformations
+        @test style == :note
+
+        # CRS is column-level metadata on the :Geometry column.
+        @test DataAPI.colmetadatasupport(typeof(tbl)) == (read=true, write=false)
+        @test DataAPI.colmetadatakeys(tbl) == (:Geometry => ("crs",),)
+        @test DataAPI.colmetadatakeys(tbl, :Geometry) == ("crs",)
+        @test DataAPI.colmetadatakeys(tbl, :Ti) == ()
+        @test DataAPI.colmetadata(tbl, :Geometry, "crs") == EPSG(4326)
+        @test DataAPI.colmetadata(tbl, :Ti, "crs", :fallback) == :fallback
+        cv, cstyle = DataAPI.colmetadata(tbl, :Geometry, "crs"; style=true)
+        @test cv == EPSG(4326)
+        @test cstyle == :note
+        @test_throws KeyError DataAPI.colmetadata(tbl, :Geometry, "missingkey")
+        @test_throws KeyError DataAPI.colmetadata(tbl, :Ti, "crs")
     end
 
     @testset "no-crs cube exposes no crs metadata" begin
@@ -87,6 +101,8 @@ square(x, y; s=1.0) =
         tbl = VectorDataCubeTable(A)
         @test isnothing(GI.crs(tbl))
         @test DataAPI.metadatakeys(tbl) == ()
+        @test DataAPI.colmetadatakeys(tbl) == ()
+        @test DataAPI.colmetadatakeys(tbl, :Geometry) == ()
         # Round-trips through Tables regardless of crs.
         ct = Tables.columntable(tbl)
         @test all(GI.isgeometry, ct.Geometry)

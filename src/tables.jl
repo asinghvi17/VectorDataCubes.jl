@@ -120,26 +120,57 @@ Tables.rows(t::VectorDataCubeTable) = Tables.rows(t.table)
 ## DataAPI metadata: expose the geometry-column CRS
 
 `DimTable` itself does not support `DataAPI.metadata`, so exposing the CRS is a
-natural, non-pirating use of `DataAPI` here. We expose a single table-level key,
-`"crs"`, with `:default` style.
+natural, non-pirating use of `DataAPI` here. The CRS belongs to the geometry
+column, so it is exposed as column-level metadata on `:Geometry` (key `"crs"`),
+and mirrored at table level for convenience.
+
+Metadata uses `:note` style, so consumers like DataFrames.jl propagate it
+through transformations (`select`, `transform`, joins) instead of dropping it.
 =#
 
 DataAPI.metadatasupport(::Type{<:VectorDataCubeTable}) = (read=true, write=false)
+DataAPI.colmetadatasupport(::Type{<:VectorDataCubeTable}) = (read=true, write=false)
 
+# Table-level metadata: a convenience mirror of the geometry column's crs.
 function DataAPI.metadatakeys(t::VectorDataCubeTable)
     isnothing(t.crs) ? () : ("crs",)
 end
 
 function DataAPI.metadata(t::VectorDataCubeTable, key::AbstractString; style::Bool=false)
-    if key == "crs"
-        return style ? (t.crs, :default) : t.crs
+    if key == "crs" && !isnothing(t.crs)
+        return style ? (t.crs, :note) : t.crs
     end
     throw(KeyError(key))
 end
 
 function DataAPI.metadata(t::VectorDataCubeTable, key::AbstractString, default; style::Bool=false)
     if key == "crs" && !isnothing(t.crs)
-        return style ? (t.crs, :default) : t.crs
+        return style ? (t.crs, :note) : t.crs
     end
-    return style ? (default, :default) : default
+    return style ? (default, :note) : default
+end
+
+# Column-level metadata: the crs lives on the `:Geometry` column.
+const _GEOMETRY_COLNAME = DD.name(Geometry)
+
+function DataAPI.colmetadatakeys(t::VectorDataCubeTable)
+    isnothing(t.crs) ? () : (_GEOMETRY_COLNAME => ("crs",),)
+end
+
+function DataAPI.colmetadatakeys(t::VectorDataCubeTable, col::Symbol)
+    (col === _GEOMETRY_COLNAME && !isnothing(t.crs)) ? ("crs",) : ()
+end
+
+function DataAPI.colmetadata(t::VectorDataCubeTable, col::Symbol, key::AbstractString; style::Bool=false)
+    if col === _GEOMETRY_COLNAME && key == "crs" && !isnothing(t.crs)
+        return style ? (t.crs, :note) : t.crs
+    end
+    throw(KeyError(key))
+end
+
+function DataAPI.colmetadata(t::VectorDataCubeTable, col::Symbol, key::AbstractString, default; style::Bool=false)
+    if col === _GEOMETRY_COLNAME && key == "crs" && !isnothing(t.crs)
+        return style ? (t.crs, :note) : t.crs
+    end
+    return style ? (default, :note) : default
 end
