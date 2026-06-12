@@ -86,3 +86,52 @@ square(x, y; s=1.0) =
         @test_throws ArgumentError vectordatacubetable(ras)
     end
 end
+
+@testset "vectordatacube: table -> cube" begin
+    geoms = [square(0, 0), square(2, 0), square(0, 2), square(2, 2)]
+    tbl = (geometry=geoms, name=["a", "b", "c", "d"], pop=[10, 20, 30, 40])
+
+    @testset "attribute columns become layers over Geometry" begin
+        cube = vectordatacube(tbl; crs=EPSG(4326))
+        @test cube isa DD.DimStack
+        @test keys(cube) == (:name, :pop)
+        @test DD.lookup(cube, Geometry) isa GeometryLookup
+        @test crs(DD.lookup(cube, Geometry)) == EPSG(4326)
+        @test all(splat(GO.equals), zip(val(DD.lookup(cube, Geometry)), geoms))
+        @test parent(cube[:name]) == tbl.name
+        @test parent(cube[:pop]) == tbl.pop
+    end
+
+    @testset "attributes stay aligned under subsetting" begin
+        cube = vectordatacube(tbl)
+        sub = cube[Geometry=2:3]
+        @test parent(sub[:name]) == ["b", "c"]
+        @test length(DD.lookup(sub, Geometry)) == 2
+        # spatial selectors too
+        hit = cube[Geometry(Contains((2.5, 0.5)))]
+        @test parent(hit[:name]) == ["b"]
+    end
+
+    @testset "layers and geometrycolumn keywords" begin
+        cube = vectordatacube(tbl; layers=(:pop,))
+        @test keys(cube) == (:pop,)
+        renamed = (geom=geoms, name=tbl.name)
+        @test_throws ArgumentError vectordatacube(renamed)
+        cube2 = vectordatacube(renamed; geometrycolumn=:geom)
+        @test parent(cube2[:name]) == tbl.name
+    end
+
+    @testset "round trip through vectordatacubetable" begin
+        cube = vectordatacube(tbl; crs=EPSG(4326))
+        ct = Tables.columntable(vectordatacubetable(cube))
+        @test Set(keys(ct)) == Set((:Geometry, :name, :pop))
+        @test all(splat(GO.equals), zip(ct.Geometry, geoms))
+        @test ct.name == tbl.name
+        @test ct.pop == tbl.pop
+    end
+
+    @testset "errors" begin
+        @test_throws ArgumentError vectordatacube(geoms)             # not a table
+        @test_throws ArgumentError vectordatacube((geometry=geoms,)) # no attribute columns
+    end
+end
