@@ -5,6 +5,7 @@ import Rasters as RA
 import Extents
 import Missings
 import SortTileRecursiveTree
+import Proj # to load GeometryOps' Proj extension for `reproject`
 
 using Rasters: isnokw, nokw, Lookups, val, Dimensions, dims
 
@@ -108,6 +109,13 @@ end
 
 GI.crs(l::GeometryLookup) = l.crs
 RA.setcrs(l::GeometryLookup, crs) = DD.rebuild(l; crs)
+
+# To reproject a GeometryLookup, you need to reproject the underlying geometry.
+function RA.reproject(target::RA.GeoFormat, l::GeometryLookup)
+    isnothing(l.crs) && throw(ArgumentError("Cannot reproject a `GeometryLookup` with no crs. Set one first with `setcrs`."))
+    new_data = GO.reproject(l.data; source_crs=l.crs, target_crs=target, always_xy=true)
+    return DD.rebuild(l; data=new_data, crs=target)
+end
 
 #=
 

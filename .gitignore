@@ -41,4 +41,4 @@ default.profraw
 .vscode
 settings.json
 
-lib/
+lib/.claude/
