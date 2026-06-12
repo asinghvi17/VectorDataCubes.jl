@@ -6,6 +6,8 @@ include("tables.jl")
 
 export GeometryLookup
 export Geometry
-export VectorDataCubeTable, vectordatacubetable
+export vectordatacubetable
+# `zonal` is deliberately not exported: Rasters exports a `zonal` too, so use
+# `VectorDataCubes.zonal` or `using VectorDataCubes: zonal`.
 
 end # module VectorDataCubes

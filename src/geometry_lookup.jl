@@ -110,10 +110,7 @@ end
 GI.crs(l::GeometryLookup) = l.crs
 RA.setcrs(l::GeometryLookup, crs) = DD.rebuild(l; crs)
 
-# Rasters has a no-op fallback `reproject(target, l::Lookup) = l`, but a
-# GeometryLookup holds actual coordinates, so it has to be reprojected for
-# real. This also makes `reproject` work on Geometry dims and whole vector
-# data cubes through Rasters' dimension/array methods.
+# To reproject a GeometryLookup, you need to reproject the underlying geometry.
 function RA.reproject(target::RA.GeoFormat, l::GeometryLookup)
     isnothing(l.crs) && throw(ArgumentError("Cannot reproject a `GeometryLookup` with no crs. Set one first with `setcrs`."))
     new_data = GO.reproject(l.data; source_crs=l.crs, target_crs=target, always_xy=true)

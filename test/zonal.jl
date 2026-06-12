@@ -2,6 +2,8 @@ using Test
 
 using Rasters, DimensionalData
 using Rasters.Lookups
+# Explicitly bind VectorDataCubes' own `zonal` (Rasters exports one too).
+using VectorDataCubes: zonal
 import DimensionalData as DD
 import GeometryOps as GO, GeoInterface as GI
 using Statistics: mean
@@ -42,6 +44,12 @@ zgl = GeometryLookup([zoneA, zoneB, zoneC])
         res_lookup = zonal(sum, ras2d; of=zgl, progress=false)
         res_dim = zonal(sum, ras2d; of=Geometry(zgl), progress=false)
         @test isequal(res_lookup, res_dim)
+    end
+
+    @testset "non-lookup `of` forwards to Rasters.zonal" begin
+        res = zonal(sum, ras2d; of=[zoneA, zoneB], progress=false)
+        @test res isa Vector
+        @test res == [(1 + 2) * 2, (5 + 6 + 7) * 3]
     end
 
     @testset "3D raster -> cube over (Ti, Geometry)" begin
