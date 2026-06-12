@@ -58,23 +58,29 @@ air = air .- 273.15
 monthly = DD.combine(mean, groupby(air, Ti => month); dims=Ti)
 
 #=
-## The geometry dimension
+## The geometry dimension: countries as a vector data cube
 
-Natural Earth returns a GeoJSON FeatureCollection, which is also a Tables.jl
-table, so we can filter it as a DataFrame. We keep the North American
-countries and build a `GeometryLookup` from their geometries.
+Natural Earth returns a GeoJSON FeatureCollection. `vectordatacube` lifts it
+into a `DimStack` over a `Geometry` dimension: the country polygons become a
+`GeometryLookup`, and the attribute columns become layers over it. Attributes
+and geometries are now one object, so subsetting the cube keeps them aligned —
+no separate table to keep in row sync. We keep three attribute layers and
+select the North American countries.
 =#
 
-all_countries = DataFrame(naturalearth("admin_0_countries", 110))
-northam = subset(all_countries, :CONTINENT => ByRow(==("North America")))
-gl = GeometryLookup(GO.tuples(northam.geometry); crs=EPSG(4326))
+countries = vectordatacube(
+    naturalearth("admin_0_countries", 110);
+    layers=(:NAME, :CONTINENT, :POP_EST), crs=EPSG(4326),
+)
+northam = countries[Geometry=findall(==("North America"), countries[:CONTINENT])]
+geodim = DD.dims(northam, Geometry)
 
 #=
 ## Zonal aggregation -> vector data cube
 
-Passing the lookup as `of` makes `zonal` return a cube over
-`(Ti, Geometry)` instead of a plain vector: the mean is computed per country
-*per month* (each spatial slice separately), and the result keeps the
+Passing the geometry dimension (or its lookup) as `of` makes `zonal` return a
+cube over `(Ti, Geometry)` instead of a plain vector: the mean is computed per
+country *per month* (each spatial slice separately), and the result keeps the
 geometry lookup, so spatial selectors keep working on it.
 
 Two coverage caveats, handled by keywords:
@@ -86,8 +92,8 @@ Two coverage caveats, handled by keywords:
   `missing` instead of `mean` of an empty slice (which would be `NaN`).
 =#
 
-temps = zonal(mean, monthly; of=gl, emptyval=missing, progress=false)
-@assert size(temps) == (12, nrow(northam))
+temps = zonal(mean, monthly; of=geodim, emptyval=missing, progress=false)
+@assert size(temps) == (12, length(geodim))
 
 # Seasonal cycle of the country containing a point in the US Great Plains:
 usa = temps[Geometry(Contains((-100.0, 40.0)))]
@@ -97,12 +103,13 @@ println("USA monthly means (°C): ", round.(vec(parent(usa)); digits=1))
 Countries entirely outside the raster's coverage (here, those fully south of
 15°N like Panama and Costa Rica) come back as `missing`, so reductions over
 the geometry axis should `skipmissing`. Which country is warmest in July, and
-coldest in January?
+coldest in January? `temps` and `northam[:NAME]` share the geometry dimension,
+so indexing one with positions found in the other is always in sync.
 =#
 july = temps[Ti=At(7)]
 january = temps[Ti=At(1)]
-println("warmest in July:    ", northam.NAME[argmax(skipmissing(parent(july)))])
-println("coldest in January: ", northam.NAME[argmin(skipmissing(parent(january)))])
+println("warmest in July:    ", northam[:NAME][argmax(skipmissing(parent(july)))])
+println("coldest in January: ", northam[:NAME][argmin(skipmissing(parent(january)))])
 
 #=
 ## Reprojection
@@ -122,6 +129,6 @@ polygons.
 =#
 
 df = DataFrame(vectordatacubetable(temps))
-@assert nrow(df) == 12 * nrow(northam)
+@assert nrow(df) == 12 * length(geodim)
 july_df = dropmissing(subset(df, :Ti => ByRow(==(7))))
 println(first(sort(july_df, :value; rev=true), 5))
