@@ -23,7 +23,6 @@ import DimensionalData as DD
 import GeometryOps as GO, GeoInterface as GI
 import Shapefile
 using DataFrames
-import DataAPI, Tables
 using Downloads: download
 
 datadir = joinpath(@__DIR__, "data")
@@ -89,12 +88,13 @@ println("highest 1974 SIDS rate: $(counties.NAME[worst_idx]) ",
 #=
 ## To a table
 
-`VectorDataCubeTable` flattens the cube into a Tables.jl table with one row per
-(county, year) pair. The `:Geometry` column holds the actual polygons, and the
-CRS is exposed as DataAPI metadata, which `DataFrame` picks up on construction.
+`vectordatacubetable` flattens the cube into a `DimensionalData.DimTable` with
+one row per (county, year) pair. The `:Geometry` column holds the actual
+polygons, and the CRS is recorded in the metadata of the table's parent cube.
 =#
 
-df = DataFrame(VectorDataCubeTable(rate))
+tbl = vectordatacubetable(rate)
+@assert DD.metadata(parent(tbl))[:crs] == EPSG(4267)
+df = DataFrame(tbl)
 @assert nrow(df) == 100 * 2
-@assert DataFrames.metadata(df, "crs") == EPSG(4267)
 println(first(sort(df, :value; rev=true), 5))

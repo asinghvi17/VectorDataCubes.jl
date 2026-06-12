@@ -89,6 +89,6 @@ One row per (time, city), with real point geometries in the `:Geometry`
 column — ready for DataFrames or any other Tables.jl consumer.
 =#
 
-df = DataFrame(VectorDataCubeTable(citycube))
+df = DataFrame(vectordatacubetable(citycube))
 @assert nrow(df) == length(citycube)
 println(first(df, 3))

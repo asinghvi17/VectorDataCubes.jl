@@ -122,7 +122,7 @@ println("Times Square -> JFK: ", tsq_to_jfk, " trips")
 
 `DimTable` works on any dim combination, so the origin-destination cube
 flattens to one row per zone pair, with real polygons in both geometry
-columns. (`VectorDataCubeTable` currently expects a single `Geometry`
+columns. (`vectordatacubetable` currently expects a single `Geometry`
 dimension, so use `DimTable` directly for multi-geometry cubes.)
 =#
 

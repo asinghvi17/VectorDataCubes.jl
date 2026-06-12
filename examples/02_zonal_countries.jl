@@ -18,6 +18,10 @@ Data:
 using VectorDataCubes
 using Rasters, DimensionalData
 using Rasters.Lookups
+## Rasters exports a `zonal` too, so bind VectorDataCubes' explicitly: it
+## returns vector data cubes for geometry-lookup `of`s and forwards any other
+## `of` to `Rasters.zonal`.
+using VectorDataCubes: zonal
 import DimensionalData as DD
 import GeometryOps as GO, GeoInterface as GI
 import NCDatasets # activates Rasters' NetCDF backend
@@ -117,7 +121,7 @@ One row per (month, country); the `:Geometry` column holds the country
 polygons.
 =#
 
-df = DataFrame(VectorDataCubeTable(temps))
+df = DataFrame(vectordatacubetable(temps))
 @assert nrow(df) == 12 * nrow(northam)
 july_df = dropmissing(subset(df, :Ti => ByRow(==(7))))
 println(first(sort(july_df, :value; rev=true), 5))
