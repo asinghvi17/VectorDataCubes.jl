@@ -88,6 +88,21 @@ zgl = GeometryLookup([zoneA, zoneB, zoneC])
         @test res[Ti=3, Geometry=1] ≈ 28.5
     end
 
+    @testset "emptyval=missing with sub-cell and off-raster geometries" begin
+        # zoneE sits between cell centers: crop is non-empty but the mask
+        # removes every cell, so each slice is empty -> emptyval. Its slice
+        # results have a different eltype than zoneA's, which must not break
+        # assembling the cube.
+        zoneE = _zsquare(0.6, 0.6, 0.9, 0.9)
+        gl = GeometryLookup([zoneA, zoneE, zoneC])
+        res = zonal(mean, ras3d; of=gl, emptyval=missing, progress=false)
+        @test size(res) == (3, 3)
+        @test !any(ismissing, res[Geometry=1])
+        @test res[Ti=1, Geometry=1] ≈ 1.5
+        @test all(ismissing, res[Geometry=2])  # sub-cell -> emptyval per slice
+        @test all(ismissing, res[Geometry=3])  # off-raster -> missing
+    end
+
     @testset "all geometries off-raster keeps the cube shape" begin
         zoneC2 = _zsquare(30.0, 30.0, 32.0, 32.0)
         off_gl = GeometryLookup([zoneC, zoneC2])
