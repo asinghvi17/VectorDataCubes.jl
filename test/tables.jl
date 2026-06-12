@@ -4,7 +4,7 @@ using Rasters, DimensionalData
 using Rasters.Lookups
 import DimensionalData as DD
 import GeometryOps as GO, GeoInterface as GI
-import Tables, DataAPI
+import Tables
 
 # A small axis-aligned unit square at (x, y), like the idiom in test/selectors.jl.
 square(x, y; s=1.0) =
@@ -16,7 +16,7 @@ square(x, y; s=1.0) =
 
     @testset "1-D cube (Geometry only)" begin
         A = rand(Geometry(gl))
-        for tbl in (DD.DimTable(A), VectorDataCubeTable(A))
+        for tbl in (DD.DimTable(A), vectordatacubetable(A))
             ct = Tables.columntable(tbl)
             @test :Geometry in keys(ct)
             @test :value in keys(ct)
@@ -33,7 +33,7 @@ square(x, y; s=1.0) =
 
     @testset "2-D cube (Geometry × Ti)" begin
         A = rand(Geometry(gl), Ti(1:3))
-        for tbl in (DD.DimTable(A), VectorDataCubeTable(A))
+        for tbl in (DD.DimTable(A), vectordatacubetable(A))
             ct = Tables.columntable(tbl)
             @test Set(keys(ct)) == Set((:Geometry, :Ti, :value))
             @test length(ct.Geometry) == length(geoms) * 3
@@ -46,7 +46,7 @@ square(x, y; s=1.0) =
 
     @testset "DimStack cube (multiple value columns)" begin
         st = DimStack((a=rand(Geometry(gl)), b=rand(Geometry(gl))))
-        for tbl in (DD.DimTable(st), VectorDataCubeTable(st))
+        for tbl in (DD.DimTable(st), vectordatacubetable(st))
             ct = Tables.columntable(tbl)
             @test Set(keys(ct)) == Set((:Geometry, :a, :b))
             @test length(ct.Geometry) == length(geoms)
@@ -56,37 +56,26 @@ square(x, y; s=1.0) =
         end
     end
 
-    @testset "VectorDataCubeTable interface & metadata" begin
+    @testset "crs is recorded in the table's metadata" begin
         A = rand(Geometry(gl), Ti(1:2))
-        tbl = VectorDataCubeTable(A)
-        @test vectordatacubetable(A) isa VectorDataCubeTable
-
-        @test Tables.istable(typeof(tbl))
-        @test Tables.columnaccess(typeof(tbl))
-        @test Set(Tables.columnnames(tbl)) == Set((:Geometry, :Ti, :value))
-        @test Tables.getcolumn(tbl, :Ti) == Tables.getcolumn(DD.DimTable(A), :Ti)
-
-        # Schema matches the inner DimTable.
-        sch = Tables.schema(tbl)
-        @test :Geometry in sch.names
-
-        # CRS exposed via DataAPI.metadata and GI.crs.
-        @test GI.crs(tbl) == EPSG(4326)
-        @test DataAPI.metadatasupport(typeof(tbl)) == (read=true, write=false)
-        @test "crs" in DataAPI.metadatakeys(tbl)
-        @test DataAPI.metadata(tbl, "crs") == EPSG(4326)
-        @test DataAPI.metadata(tbl, "missingkey", :fallback) == :fallback
-        v, style = DataAPI.metadata(tbl, "crs"; style=true)
-        @test v == EPSG(4326)
-        @test style == :default
+        tbl = vectordatacubetable(A)
+        @test tbl isa DD.DimTable
+        @test DD.metadata(parent(tbl))[:crs] == EPSG(4326)
+        # The rebuild is cheap: data and lookups are reused, not copied.
+        @test parent(parent(tbl)) === parent(A)
+        @test DD.lookup(parent(tbl), Geometry) === gl
+        # Existing metadata is preserved alongside the crs.
+        B = DD.rebuild(A; metadata=Dict{Symbol,Any}(:title => "t"))
+        mdB = DD.metadata(parent(vectordatacubetable(B)))
+        @test mdB[:crs] == EPSG(4326)
+        @test mdB[:title] == "t"
     end
 
-    @testset "no-crs cube exposes no crs metadata" begin
+    @testset "no-crs cube gets no crs metadata" begin
         gl2 = GeometryLookup(geoms)  # hand-made polygons have no crs
         A = rand(Geometry(gl2))
-        tbl = VectorDataCubeTable(A)
-        @test isnothing(GI.crs(tbl))
-        @test DataAPI.metadatakeys(tbl) == ()
+        tbl = vectordatacubetable(A)
+        @test DD.metadata(parent(tbl)) isa DD.Lookups.NoMetadata
         # Round-trips through Tables regardless of crs.
         ct = Tables.columntable(tbl)
         @test all(GI.isgeometry, ct.Geometry)
@@ -94,6 +83,6 @@ square(x, y; s=1.0) =
 
     @testset "errors on non-vector cube" begin
         ras = rand(X(1:3), Y(1:3))
-        @test_throws ArgumentError VectorDataCubeTable(ras)
+        @test_throws ArgumentError vectordatacubetable(ras)
     end
 end

@@ -10,14 +10,9 @@ import Proj # to load GeometryOps' Proj extension for `reproject`
 using Rasters: isnokw, nokw, Lookups, val, Dimensions, dims
 
 """
-    Geometry(lookup::GeometryLookup)
-    Geometry(sel)
+    Geometry
 
-A dimension for geometry lookups in vector data cubes.
-
-Construct a `DimArray` with a [`GeometryLookup`](@ref) like
-`DimArray(data, Geometry(GeometryLookup(geometries)))`, and
-index into it with selectors like `Geometry(Contains(point))`.
+A dimension meant to be used with a [`GeometryLookup`](@ref).
 """
 DD.@dim Geometry "Geometry"
 
@@ -115,10 +110,7 @@ end
 GI.crs(l::GeometryLookup) = l.crs
 RA.setcrs(l::GeometryLookup, crs) = DD.rebuild(l; crs)
 
-# Rasters has a no-op fallback `reproject(target, l::Lookup) = l`, but a
-# GeometryLookup holds actual coordinates, so it has to be reprojected for
-# real. This also makes `reproject` work on Geometry dims and whole vector
-# data cubes through Rasters' dimension/array methods.
+# To reproject a GeometryLookup, you need to reproject the underlying geometry.
 function RA.reproject(target::RA.GeoFormat, l::GeometryLookup)
     isnothing(l.crs) && throw(ArgumentError("Cannot reproject a `GeometryLookup` with no crs. Set one first with `setcrs`."))
     new_data = GO.reproject(l.data; source_crs=l.crs, target_crs=target, always_xy=true)
@@ -291,18 +283,9 @@ function Lookups.selectindices(
     potential_candidates = if isnothing(lookup.tree)
         collect(eachindex(lookup.data))
     else
-        # TODO: this should be
-        # lookup_ext = Lookups.bounds(lookup)
-        # but that relies on https://github.com/rafaqz/DimensionalData.jl/pull/991/
-        # so for now we need GI.extent(lookup.tree)
-        lookup_ext = GI.extent(lookup.tree)
-
-        # This is a specialized implementation to save on lookups
-        if lookup_ext.X[1] <= xval <= lookup_ext.X[2] && lookup_ext.Y[1] <= yval <= lookup_ext.Y[2]
-            GO.SpatialTreeInterface.query(lookup.tree, (xval, yval))
-        else
-            Int[]
-        end
+        # The tree query already rejects points outside the root node's
+        # extent, so no separate extent check is needed here.
+        GO.SpatialTreeInterface.query(lookup.tree, (xval, yval))
     end
     if is_at
         # If both selectors are At(), return a single index (first match) for speed and clarity
