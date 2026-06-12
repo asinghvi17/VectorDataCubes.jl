@@ -3,11 +3,9 @@ using Test
 
 using Rasters, DimensionalData
 using Rasters.Lookups
-import Proj
 import GeometryOps as GO, GeoInterface as GI
 using Extents
 
-import NCDatasets
 import DimensionalData as DD
 
 @testset "construction" begin
@@ -26,7 +24,7 @@ end
     country_polygons = country_fc.geometry
     # create a DimVector from the land polygons
     gl = GeometryLookup(country_polygons)
-    ras = rand(Dim{:Geometry}(gl))
+    ras = rand(Geometry(gl))
     @testset "indexing" begin
         # TODO: fix this to only return a single index, if necessary...
         @test only(ras[Geometry = (X(At(-103)), Y(At(44)))]) == ras[findfirst(==("USA"), country_fc.ADM0_A3)]
@@ -47,6 +45,6 @@ end
     #     end
         # @test ras[Geometry=Where(GO.contains(gl[1]))] == ras[Geometry=1]
         # @test ras[Geometry=Where(GO.equals(gl[1]))] == ras[Geometry=1]
-        @test_broken ras[Geometry=Where(GO.disjoint(gl[1]))] == ras[Geometry=2:DD.End()]
+        @test ras[Geometry=Where(GO.disjoint(gl[1]))] == ras[Geometry=2:DD.End()]
     # end
 end
