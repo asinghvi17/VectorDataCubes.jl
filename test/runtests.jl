@@ -1,10 +1,10 @@
-using VectorDataCubes
-using Test
+using SafeTestsets
 
-@testset "VectorDataCubes.jl" begin
-    include("construction.jl")
-    include("selectors.jl")
-    include("zonal.jl")
-    include("tables.jl")
-    include("basics.jl")
-end
+# Each file runs in its own module (`@safetestset`), so every test file must be
+# self-contained: it imports VectorDataCubes and everything else it needs. Nothing
+# leaks in from here.
+@safetestset "construction" begin include("construction.jl") end
+@safetestset "selectors" begin include("selectors.jl") end
+@safetestset "zonal" begin include("zonal.jl") end
+@safetestset "tables" begin include("tables.jl") end
+@safetestset "basics" begin include("basics.jl") end
