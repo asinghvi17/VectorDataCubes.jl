@@ -42,7 +42,7 @@ function _zonal(f, st::RA.AbstractRasterStack, lookup::GeometryLookup; kw...)
     return RA.RasterStack(NamedTuple{K}(layers))
 end
 function _zonal(f, x::RA.AbstractRaster, lookup::GeometryLookup;
-    spatialslices=true, skipmissing=true, emptyval=nokw, kw...
+    spatialslices=true, skipmissing=true, emptyval=nokw, progress=true, threaded=true, kw...
 )
     geoms = lookup.data
     isempty(geoms) && throw(ArgumentError("Cannot compute zonal statistics with an empty `GeometryLookup`."))
@@ -50,18 +50,33 @@ function _zonal(f, x::RA.AbstractRaster, lookup::GeometryLookup;
     return Base.open(x) do o
         xp = RA._prepare_for_burning(o)
         slicedims = _zonal_slicedims(spatialslices, xp, lookup)
-        # When slicing, `emptyval` has to be applied per slice inside the
-        # wrapper, not by Rasters per geometry, where it would produce a
-        # scalar instead of a slice-shaped result.
-        inner, inner_emptyval = if isnothing(slicedims)
-            f, emptyval
+        zs = if isnothing(slicedims)
+            RA._zonal(f, xp, nothing, geoms; skipmissing, emptyval, progress, threaded, kw...)
         else
-            _SpatialSliceify(f, slicedims, emptyval), nokw
+            # When slicing, `emptyval` is applied per slice inside the wrapper
+            # rather than by Rasters per geometry, where it would produce a
+            # scalar instead of a slice-shaped result. The per-geometry loop is
+            # also run here rather than through Rasters' allocation path, which
+            # types its result vector from the first geometry and so cannot hold
+            # slice results whose eltype differs between geometries (e.g. an
+            # all-`emptyval` result for a geometry smaller than a grid cell).
+            inner = _SpatialSliceify(f, slicedims, emptyval)
+            _zonal_eachgeom(inner, xp, geoms; skipmissing, progress, threaded, kw...)
         end
-        zs = RA._zonal(inner, xp, nothing, geoms; skipmissing, emptyval=inner_emptyval, kw...)
         otherdims = isnothing(slicedims) ? () : DD.otherdims(xp, slicedims)
         _geometry_cube(xp, zs, Geometry(lookup), otherdims)
     end
+end
+
+# Like Rasters' `_zonal(f, x, ::Nothing, geoms)`, reusing its per-geometry
+# crop/mask path and `_run` threading/progress, but collecting into an
+# untyped vector that is narrowed afterwards.
+function _zonal_eachgeom(f, x, geoms; skipmissing, progress, threaded, kw...)
+    zs = Vector{Any}(undef, length(geoms))
+    RA._run(eachindex(zs), threaded, progress, "Applying $f to each geometry...") do i
+        zs[i] = RA._zonal(f, x, geoms[i]; skipmissing, emptyval=nokw, kw...)
+    end
+    return map(identity, zs)
 end
 
 _zonal_slicedims(spatialslices::Bool, x, lookup) =
