@@ -42,3 +42,4 @@ default.profraw
 settings.json
 
 lib/.claude/
+.claude/
