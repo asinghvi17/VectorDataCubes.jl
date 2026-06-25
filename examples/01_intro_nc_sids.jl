@@ -97,4 +97,4 @@ tbl = vectordatacubetable(rate)
 @assert DD.metadata(parent(tbl))[:crs] == EPSG(4267)
 df = DataFrame(tbl)
 @assert nrow(df) == 100 * 2
-println(first(sort(df, :value; rev=true), 5))
+first(sort(df, :value; rev=true), 5)
