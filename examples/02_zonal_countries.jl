@@ -31,9 +31,9 @@ using Statistics: mean
 using Dates
 using Downloads: download
 
-datadir = joinpath(@__DIR__, "data")
-mkpath(datadir)
-airfile = joinpath(datadir, "air_temperature.nc")
+datadir(args...) = joinpath(@__DIR__, "data", args...)
+mkpath(datadir())
+airfile = datadir("air_temperature.nc")
 isfile(airfile) || download(
     "https://raw.githubusercontent.com/pydata/xarray-data/master/air_temperature.nc",
     airfile,
@@ -93,11 +93,11 @@ Two coverage caveats, handled by keywords:
 =#
 
 temps = zonal(mean, monthly; of=geodim, emptyval=missing, progress=false)
-@assert size(temps) == (12, length(geodim))
+size(temps) == (12, length(geodim))
 
 # Seasonal cycle of the country containing a point in the US Great Plains:
 usa = temps[Geometry(Contains((-100.0, 40.0)))]
-println("USA monthly means (°C): ", round.(vec(parent(usa)); digits=1))
+round.(vec(parent(usa)); digits=1)
 
 #=
 Countries entirely outside the raster's coverage (here, those fully south of
@@ -119,7 +119,7 @@ only the geometry dimension is affected.
 =#
 
 temps_3857 = reproject(EPSG(3857), temps)
-@assert crs(DD.lookup(temps_3857, Geometry)) == EPSG(3857)
+crs(DD.lookup(temps_3857, Geometry)) == EPSG(3857)
 
 #=
 ## To a table
@@ -129,6 +129,5 @@ polygons.
 =#
 
 df = DataFrame(vectordatacubetable(temps))
-@assert nrow(df) == 12 * length(geodim)
 july_df = dropmissing(subset(df, :Ti => ByRow(==(7))))
-println(first(sort(july_df, :value; rev=true), 5))
+first(sort(july_df, :value; rev=true), 5)

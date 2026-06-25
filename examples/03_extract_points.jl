@@ -23,9 +23,9 @@ using DataFrames
 using Statistics: mean
 using Downloads: download
 
-datadir = joinpath(@__DIR__, "data")
-mkpath(datadir)
-airfile = joinpath(datadir, "air_temperature.nc")
+datadir(args...) = joinpath(@__DIR__, "data", args...)
+mkpath(datadir())
+airfile = datadir("air_temperature.nc")
 isfile(airfile) || download(
     "https://raw.githubusercontent.com/pydata/xarray-data/master/air_temperature.nc",
     airfile,
@@ -58,13 +58,13 @@ a cube whose geometry dimension is a `GeometryLookup` over the city *points*.
 series = map(cities.geometry) do pt
     air[X=Near(GI.x(pt)), Y=Near(GI.y(pt))]
 end
-citygl = GeometryLookup(GO.tuples(cities.geometry); crs=EPSG(4326))
+citygl = GeometryLookup(GO.get_geometries(cities.geometry); crs=EPSG(4326))
 citycube = Raster(
     reduce(hcat, parent.(series)),
     (dims(air, Ti), Geometry(citygl));
     name=:air,
 )
-@assert size(citycube) == (length(dims(air, Ti)), nrow(cities))
+size(citycube) == (length(dims(air, Ti)), nrow(cities))
 
 #=
 ## Selectors on a point lookup
@@ -90,5 +90,4 @@ column — ready for DataFrames or any other Tables.jl consumer.
 =#
 
 df = DataFrame(vectordatacubetable(citycube))
-@assert nrow(df) == length(citycube)
-println(first(df, 3))
+first(df, 3)

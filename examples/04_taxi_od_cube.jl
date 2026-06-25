@@ -20,25 +20,25 @@ using Rasters, DimensionalData
 using Rasters.Lookups
 import DimensionalData as DD
 import GeometryOps as GO, GeoInterface as GI
-import Shapefile, Parquet2, ZipFile
+import GeoDataFrames, Parquet2, ZipFile
 import Tables
 using Downloads: download
 
-datadir = joinpath(@__DIR__, "data")
-mkpath(datadir)
+datadir(args...) = joinpath(@__DIR__, "data", args...)
+mkpath(datadir())
 
-zonefile = joinpath(datadir, "taxi_zones.shp")
+zonefile = datadir("taxi_zones.shp")
 if !isfile(zonefile)
     zippath = download("https://d37ci6vzurychx.cloudfront.net/misc/taxi_zones.zip")
     archive = ZipFile.Reader(zippath)
     for f in archive.files
         endswith(f.name, "/") && continue # skip directory entries
-        write(joinpath(datadir, basename(f.name)), read(f))
+        write(datadir(basename(f.name)), read(f))
     end
     close(archive)
 end
 
-tripfile = joinpath(datadir, "yellow_tripdata_2022-01.parquet")
+tripfile = datadir("yellow_tripdata_2022-01.parquet")
 isfile(tripfile) || download(
     "https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_2022-01.parquet",
     tripfile,
@@ -53,14 +53,14 @@ coordinates. Origins and destinations share the same zones, so the two
 lookups are built from the same geometry vector.
 =#
 
-zones = Shapefile.Table(zonefile)
+zones = GeoDataFrames.read(zonefile)
 geoms = GO.reproject(
-    GO.tuples(Shapefile.shapes(zones));
+    GO.get_geometries(zones);
     source_crs=EPSG(2263), target_crs=EPSG(4326), always_xy=true,
 )
 
-origin = Dim{:origin}(GeometryLookup(geoms; crs=EPSG(4326)))
-destination = Dim{:destination}(GeometryLookup(geoms; crs=EPSG(4326)))
+Origin = Dim{:Origin}(GeometryLookup(geoms; crs=EPSG(4326)))
+Destination = Dim{:Destination}(GeometryLookup(geoms; crs=EPSG(4326)))
 
 #=
 ## The cube
@@ -83,7 +83,7 @@ for (pu, dropoff) in zip(pickup_ids, dropoff_ids)
     counts[i, j] += 1
 end
 
-od = Raster(counts, (origin, destination); name=:trips)
+od = Raster(counts, (Origin, Destination); name=:trips)
 println(sum(od), " of ", length(pickup_ids), " trips between known zones")
 
 #=
@@ -97,7 +97,7 @@ go?
 times_square = (-73.9857, 40.7580)
 jfk = (-73.7781, 40.6413)
 
-from_tsq = vec(parent(od[origin=Contains(times_square)]))
+from_tsq = vec(parent(od[Origin=Contains(times_square)]))
 top5 = sortperm(from_tsq; rev=true)[1:5]
 println("top destinations from Times Square:")
 for j in top5
@@ -106,16 +106,16 @@ end
 
 # ...and on the destination axis: where do trips *into* JFK come from?
 # (The busiest "origin" is JFK itself — intra-zone trips — so show the top 3.)
-into_jfk = vec(parent(od[destination=Contains(jfk)]))
+into_jfk = vec(parent(od[Destination=Contains(jfk)]))
 println("top origins for JFK dropoffs:")
 for i in sortperm(into_jfk; rev=true)[1:3]
     println("  ", rpad(zones.zone[i], 28), into_jfk[i], " trips")
 end
 
 # Both axes at once — how many trips ran Times Square -> JFK that month?
-tsq_to_jfk = only(od[origin=Contains(times_square), destination=Contains(jfk)])
+tsq_to_jfk = only(od[Origin=Contains(times_square), Destination=Contains(jfk)])
 println("Times Square -> JFK: ", tsq_to_jfk, " trips")
-@assert tsq_to_jfk == from_tsq[only(Lookups.selectindices(val(destination), Contains(jfk)))]
+tsq_to_jfk == from_tsq[only(Lookups.selectindices(val(Destination), Contains(jfk)))]
 
 #=
 ## To a table
@@ -127,6 +127,5 @@ dimension, so use `DimTable` directly for multi-geometry cubes.)
 =#
 
 tbl = DD.DimTable(od)
-@assert Tables.columnnames(tbl) == (:origin, :destination, :trips)
-@assert GI.isgeometry(first(Tables.getcolumn(tbl, :origin)))
-println(length(Tables.getcolumn(tbl, :trips)), " rows")
+# The columns are the two geometry dimensions plus the value layer:
+Tables.columnnames(tbl)

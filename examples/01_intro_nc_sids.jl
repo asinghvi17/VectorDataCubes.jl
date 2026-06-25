@@ -21,20 +21,21 @@ using Rasters, DimensionalData
 using Rasters.Lookups
 import DimensionalData as DD
 import GeometryOps as GO, GeoInterface as GI
-import Shapefile
+import GeoDataFrames, Shapefile
 using DataFrames
 using Downloads: download
 
-datadir = joinpath(@__DIR__, "data")
-mkpath(datadir)
+datadir(args...) = joinpath(@__DIR__, "data", args...)
+mkpath(datadir())
+
 for ext in ("shp", "dbf", "shx", "prj")
-    file = joinpath(datadir, "nc.$ext")
+    file = datadir("nc.$ext")
     isfile(file) || download(
         "https://raw.githubusercontent.com/r-spatial/sf/main/inst/shape/nc.$ext", file
     )
 end
 
-counties = Shapefile.Table(joinpath(datadir, "nc.shp"))
+counties = GeoDataFrames.read(datadir("nc.shp"))
 
 #=
 ## Constructing the cube
@@ -45,10 +46,14 @@ spatial selectors on the cube are fast, and it carries the CRS (the data is in
 NAD27, EPSG:4267).
 =#
 
-geoms = GO.tuples(Shapefile.shapes(counties))
-gl = GeometryLookup(geoms; crs=EPSG(4267))
+geoms = GO.get_geometries(counties)
+gl = GeometryLookup(counties)
+# You could also write `gl = GeometryLookup(GO.get_geometries(counties); crs=GI.crs(counties))` if you want to do this manually.
 
-years = Dim{:year}([1974, 1979])
+# Let's now create a time dimension, called `Year`.
+years = Dim{:Year}([1974, 1979])
+# Finally, we can construct a DimStack with the data, which is a set of dimensional arrays
+# which share some common axes.
 cube = DimStack((;
     births = DimArray([counties.BIR74 counties.BIR79], (Geometry(gl), years)),
     sids = DimArray([counties.SID74 counties.SID79], (Geometry(gl), years)),
@@ -64,13 +69,15 @@ directly. Which county contains Raleigh?
 
 raleigh = (-78.6382, 35.7796)
 wake = cube[Geometry(Contains(raleigh))]
-@assert size(wake[:births]) == (1, 2)
+# This returns a DimStack that has certain elements.  We can select a layer of the stack:
+wake.births
+# and check it has the correct things:
+size(wake[:births]) == (1, 2)
 
 # The selector machinery also works on the lookup itself, which lets us recover
 # the county's attributes from the original table:
 wake_idx = only(Lookups.selectindices(gl, Contains(raleigh)))
 println("Raleigh is in $(counties.NAME[wake_idx]) county")
-println("births: ", parent(wake[:births]))
 
 #=
 ## Derived layers
@@ -79,22 +86,18 @@ Cube arithmetic works as usual — dimensions (including the geometry lookup) ar
 carried through broadcasting. Here is the SIDS rate per 1000 births:
 =#
 
-rate = cube[:sids] ./ cube[:births] .* 1000
+rate = @d cube.sids ./ cube.births .* 1000 name=:rate
 
-worst_rate, worst_idx = findmax(rate[year=At(1974)])
-println("highest 1974 SIDS rate: $(counties.NAME[worst_idx]) ",
-    "($(round(worst_rate; digits=2)) per 1000 births)")
+worst_rate, worst_idx = findmax(rate[Year=At(1974)])
 
 #=
 ## To a table
 
-`vectordatacubetable` flattens the cube into a `DimensionalData.DimTable` with
-one row per (county, year) pair. The `:Geometry` column holds the actual
-polygons, and the CRS is recorded in the metadata of the table's parent cube.
+You can call any Tables.jl compatible constructor, in this case `DataFrame`, on the cube to get a table.
 =#
 
-tbl = vectordatacubetable(rate)
-@assert DD.metadata(parent(tbl))[:crs] == EPSG(4267)
-df = DataFrame(tbl)
-@assert nrow(df) == 100 * 2
-first(sort(df, :value; rev=true), 5)
+tbl = DataFrame(rate)
+# We can sort the table by the value, and get the top 5 counties by rate:
+first(sort(tbl, :rate; rev=true), 5)
+# and write it to a shapefile:
+GeoDataFrames.write(GeoDataFrames.ArchGDALDriver(), datadir("nc_rates.shp"), tbl; geometrycolumn = :Geometry)
