@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["Anshul Singhvi <anshulsinghvi@gmail.com>"]
 
 [workspace]
-projects = ["docs"]
+projects = ["docs", "test"]
 
 [deps]
 DimensionalData = "0703355e-b756-11e9-17c0-8b28908087d0"

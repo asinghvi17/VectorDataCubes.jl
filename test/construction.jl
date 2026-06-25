@@ -1,4 +1,5 @@
 using Test
+using VectorDataCubes
 
 using Rasters, DimensionalData
 using Rasters.Lookups
