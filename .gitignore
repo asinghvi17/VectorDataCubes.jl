@@ -19,6 +19,9 @@ deps/src/
 docs/build/
 docs/site/
 
+# Example pages generated from examples/*.jl by Literate (and their downloaded data)
+docs/src/examples/
+
 # PythonCall added .CondaPkg to /docs
 docs/.CondaPkg
 
